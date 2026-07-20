@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "tsx --watch src/index.ts",
     "build": "tsc",
-    "start": "node .",
+    "start": "npm run build && node .",
     "commands": "tsx src/deploy-commands.ts"
   },
   "dependencies": {
