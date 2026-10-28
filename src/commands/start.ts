@@ -1,8 +1,13 @@
 import { neon } from '@neondatabase/serverless';
-import { ChatInputCommandInteraction, SlashCommandBuilder } from 'discord.js';
+import {
+  ChatInputCommandInteraction,
+  ContainerBuilder,
+  MessageFlags,
+  SlashCommandBuilder,
+} from 'discord.js';
 import _ from 'lodash';
 import { romanize } from 'romans';
-import type { ServerKey } from '../utils/index.ts';
+import { TYPE_COLORS, TYPE_IMAGES, type PokemonType, type ServerKey } from '../utils/index.ts';
 import 'dotenv/config';
 
 const sql = neon(process.env['DATABASE_URL']!);
@@ -54,23 +59,46 @@ const execute = async (interaction: ChatInputCommandInteraction) => {
     await sql`SELECT * FROM "DiscordKeys" WHERE "guildID" = ${interaction.guildId}`
   )[0] as ServerKey;
 
+  const container = new ContainerBuilder().setAccentColor(0xe51400);
+
   if (!serverKey) {
-    interaction.editReply(
-      'Server is not registered to play. Please run the `/register` command by a moderator',
-    );
+    container
+      .addTextDisplayComponents((textDisplay) => textDisplay.setContent('## Oops!'))
+      .addTextDisplayComponents((textDisplay) =>
+        textDisplay.setContent(
+          'The server is not registered to play. Please have a moderator run `/register`',
+        ),
+      );
+
+    await interaction.editReply({ components: [container], flags: MessageFlags.IsComponentsV2 });
+
     return;
   }
 
   const generation = interaction.options.getInteger('generation');
-  const type = interaction.options.getString('type');
+  const type = interaction.options.getString('type') as PokemonType;
 
   if (!generation && !type) {
-    await interaction.editReply('Please set either type or generation');
+    container
+      .addTextDisplayComponents((textDisplay) => textDisplay.setContent('## Oops!'))
+      .addTextDisplayComponents((textDisplay) =>
+        textDisplay.setContent("You can't play without choosing a filter!"),
+      );
+
+    await interaction.editReply({ components: [container], flags: MessageFlags.IsComponentsV2 });
+
     return;
   }
 
   if (generation && type) {
-    await interaction.editReply("Can't set both type and generation");
+    container
+      .addTextDisplayComponents((textDisplay) => textDisplay.setContent('## Oops!'))
+      .addTextDisplayComponents((textDisplay) =>
+        textDisplay.setContent("you can't set both filters at once!"),
+      );
+
+    await interaction.editReply({ components: [container], flags: MessageFlags.IsComponentsV2 });
+
     return;
   }
 
@@ -82,11 +110,67 @@ const execute = async (interaction: ChatInputCommandInteraction) => {
 
   const bodyText = await res.text();
 
-  await interaction.editReply(
-    `Game started with ${
-      generation ? `Gen ${romanize(generation)}` : `${_.capitalize(type!)} type`
-    }. ${bodyText.replace('!guesswho ', '/')}`,
-  );
+  if (bodyText.startsWith('Game is already running')) {
+    container
+      .addTextDisplayComponents((textDisplay) => textDisplay.setContent('## Oops!'))
+      .addTextDisplayComponents((textDisplay) =>
+        textDisplay.setContent('Someone already started a game. Join in with `/guess [Pokémon]`'),
+      );
+
+    await interaction.editReply({ components: [container], flags: MessageFlags.IsComponentsV2 });
+
+    return;
+  }
+
+  container.addTextDisplayComponents((textDisplay) => textDisplay.setContent('# Game started!'));
+
+  if (generation) {
+    const receivedTyping = bodyText.match(/Typing: (.*)\./)![1]?.split('/') as PokemonType[];
+
+    container
+      .setAccentColor(TYPE_COLORS[receivedTyping[0]!])
+      .addTextDisplayComponents((textDisplay) =>
+        textDisplay.setContent(`### You chose generation ${romanize(generation)}.`),
+      )
+      .addTextDisplayComponents((textDisplay) =>
+        textDisplay.setContent(`The Pokémon I generated has a typing of`),
+      )
+      .addMediaGalleryComponents((mediaGallery) =>
+        mediaGallery.addItems(
+          receivedTyping.map(
+            (receivedType) => (mediaItem) =>
+              mediaItem
+                .setURL(TYPE_IMAGES[receivedType])
+                .setDescription(`${receivedType}-type icon`),
+          ),
+        ),
+      )
+      .addTextDisplayComponents((textDisplay) =>
+        textDisplay.setContent("Place your guesses with '/guess [Pokémon]'"),
+      );
+  } else {
+    const receivedGen = bodyText.match(/Gen (.*)\./)![1];
+
+    container
+      .setAccentColor(TYPE_COLORS[_.capitalize(type)])
+      .addTextDisplayComponents((textDisplay) => textDisplay.setContent('### You chose the'))
+      .addMediaGalleryComponents((mediaGallery) =>
+        mediaGallery.addItems((mediaItem) =>
+          mediaItem
+            .setURL(TYPE_IMAGES[_.capitalize(type)])
+            .setDescription(`${_.capitalize(type)}-type icon`),
+        ),
+      )
+      .addTextDisplayComponents((textDisplay) => textDisplay.setContent('### type.'))
+      .addTextDisplayComponents((textDisplay) =>
+        textDisplay.setContent(`The Pokémon I generated is from Generation ${receivedGen}.`),
+      )
+      .addTextDisplayComponents((textDisplay) =>
+        textDisplay.setContent("Place your guesses with '/guess [Pokémon]'"),
+      );
+  }
+
+  await interaction.editReply({ components: [container], flags: MessageFlags.IsComponentsV2 });
 };
 
 export { data, execute };

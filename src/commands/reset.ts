@@ -1,5 +1,11 @@
 import { neon } from '@neondatabase/serverless';
-import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
+import {
+  ChatInputCommandInteraction,
+  ContainerBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+  SlashCommandBuilder,
+} from 'discord.js';
 import type { ServerKey } from '../utils/index.ts';
 import 'dotenv/config';
 
@@ -24,10 +30,19 @@ const execute = async (interaction: ChatInputCommandInteraction) => {
     await sql`SELECT * FROM "DiscordKeys" WHERE "guildID" = ${interaction.guildId}`
   )[0] as ServerKey;
 
+  const container = new ContainerBuilder().setAccentColor(0xe51400);
+
   if (!serverKey) {
-    interaction.editReply(
-      'Server is not registered to play. Please run the `/register` command by a moderator',
-    );
+    container
+      .addTextDisplayComponents((textDisplay) => textDisplay.setContent('## Oops!'))
+      .addTextDisplayComponents((textDisplay) =>
+        textDisplay.setContent(
+          'The server is not registered to play. Please have a moderator run `/register`',
+        ),
+      );
+
+    await interaction.editReply({ components: [container], flags: MessageFlags.IsComponentsV2 });
+
     return;
   }
 
@@ -41,7 +56,12 @@ const execute = async (interaction: ChatInputCommandInteraction) => {
 
   const bodyText = await res.text();
 
-  interaction.editReply(bodyText.replace('!guesswho ', '/'));
+  container
+    .setAccentColor(0xff9800)
+    .addTextDisplayComponents((textDisplay) => textDisplay.setContent('## Game ended'))
+    .addTextDisplayComponents((textDisplay) => textDisplay.setContent(bodyText));
+
+  await interaction.editReply({ components: [container], flags: MessageFlags.IsComponentsV2 });
 };
 
 export { data, execute };
